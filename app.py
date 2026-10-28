@@ -12,12 +12,12 @@ import scanner
 IST = ZoneInfo("Asia/Kolkata")
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "scan_cache.json")
 COOLDOWN_MIN = float(os.environ.get("COOLDOWN_MIN", "5"))   # gap required after a successful scan
-STUCK_MIN = 25                                              # a scan older than this is treated as dead
+STUCK_MIN = 45                                              # a scan older than this is treated as dead
 
 app = Flask(__name__)
 lock = threading.Lock()
 state = {"status": "idle", "stage": "", "done": 0, "total": 0, "error": None, "rows": [], "updated": None,
-         "data_date": None, "provisional": False, "info": {}, "log": [], "started": None, "scan_id": 0}
+         "data_date": None, "provisional": False, "info": {}, "log": [], "started": None, "scan_id": 0, "scope": "indices"}
 
 
 def now():
@@ -53,22 +53,22 @@ def load_cache():
 def save_cache():
     os.makedirs(os.path.dirname(CACHE), exist_ok=True)
     with open(CACHE, "w") as f:
-        json.dump({k: state[k] for k in ("rows", "updated", "data_date", "provisional", "info")}, f)
+        json.dump({k: state[k] for k in ("rows", "updated", "data_date", "provisional", "info", "scope")}, f)
 
 
-def start_scan():
+def start_scan(scope="indices"):
     with lock:
         if is_scanning():
             return False
         state["scan_id"] += 1
         state.update(status="scanning", stage="Starting", done=0, total=0, error=None, log=[],
-                     started=now().isoformat())
+                     started=now().isoformat(), scope=scope)
         sid = state["scan_id"]
-    threading.Thread(target=_run, args=(sid,), daemon=True).start()
+    threading.Thread(target=_run, args=(sid, scope), daemon=True).start()
     return True
 
 
-def _run(sid):
+def _run(sid, scope):
     def live():
         return state["scan_id"] == sid
 
@@ -81,7 +81,7 @@ def _run(sid):
             state["log"] = (state["log"] + [f"{now():%H:%M:%S}  {msg}"])[-40:]
 
     try:
-        rows, info = scanner.run_scan(progress, log)
+        rows, info = scanner.run_scan(progress, log, scope)
         if live():
             t = now()
             with lock:
@@ -140,13 +140,15 @@ def index():
         buys=sum(r["status"] == "BUY" for r in rows), nears=sum(r["status"] == "NEAR" for r in rows),
         updated=datetime.fromisoformat(updated).astimezone(IST).strftime("%d %b %Y, %I:%M %p IST") if updated else None,
         data_date=date.fromisoformat(state["data_date"]).strftime("%d %b %Y") if state["data_date"] else None,
-        can_scan=can_scan(), cooldown=int(COOLDOWN_MIN))
+        can_scan=can_scan(), cooldown=int(COOLDOWN_MIN), scope=state["scope"],
+        scope_label="all NSE stocks" if state["scope"] == "all" else "Nifty 500 + small/micro caps")
 
 
 @app.route("/scan", methods=["POST"])
 def scan():
+    scope = request.form.get("scope", "indices")
     if can_scan():
-        start_scan()
+        start_scan(scope if scope in ("indices", "all") else "indices")
     return redirect("/")
 
 

@@ -12,11 +12,15 @@ import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE = "https://niftyindices.com/IndexConstituent/"
-GROUPS = [  # (file key, label, NSE file name)
-    ("nifty500", "Nifty 500", "ind_nifty500list.csv"),
-    ("smallcap250", "Nifty Smallcap 250", "ind_niftysmallcap250list.csv"),
-    ("microcap250", "Nifty Microcap 250", "ind_niftymicrocap250_list.csv"),
+EQUITY_URLS = ["https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",
+               "https://archives.nseindia.com/content/equities/EQUITY_L.csv"]
+GROUPS = [  # (file key, label, NSE file name, download urls)
+    ("nifty500", "Nifty 500", "ind_nifty500list.csv", [BASE + "ind_nifty500list.csv"]),
+    ("smallcap250", "Nifty Smallcap 250", "ind_niftysmallcap250list.csv", [BASE + "ind_niftysmallcap250list.csv"]),
+    ("microcap250", "Nifty Microcap 250", "ind_niftymicrocap250_list.csv", [BASE + "ind_niftymicrocap250_list.csv"]),
+    ("all_nse", "Other NSE stocks", "EQUITY_L.csv", EQUITY_URLS),   # every listed stock; only used for scope "all"
 ]
+KEEP_SERIES = {"EQ", "BE"}   # main-board equity; skips SME, bonds, ETFs etc.
 NAMES = ["ADX", "CHOP", "EMA200", "RSI", "VOL"]
 RR = 2.0          # target = 2 x risk
 MAX_BUY_AGE = 3   # keep BUY signals up to 3 trading days old (page filters further)
@@ -115,31 +119,39 @@ def analyse(df, wait=3, adx_min=22.0, ci_max=55.0):
 
 
 def _symbols(src):
-    df = pd.read_csv(src)
-    col = next(c for c in df.columns if c.strip().lower() == "symbol")
+    df = pd.read_csv(src, skipinitialspace=True)
+    df.columns = [c.strip() for c in df.columns]
+    col = next(c for c in df.columns if c.lower() == "symbol")
+    ser = next((c for c in df.columns if c.lower() == "series"), None)
+    if ser:
+        df = df[df[ser].astype(str).str.strip().isin(KEEP_SERIES)]
     return df[col].astype(str).str.strip().tolist()
 
 
-def _read_group(key, label, filename, log):
+def _read_group(key, label, filename, urls, log):
     """Use a CSV from the 'universe' folder if present (most reliable on a server); else try NSE."""
     for name in (key + ".csv", filename):
         path = os.path.join(BASE_DIR, "universe", name)
         if os.path.exists(path):
             log(f"{label}: using universe/{name}")
             return _symbols(path)
-    try:
-        log(f"{label}: downloading list from NSE")
-        req = urllib.request.Request(BASE + filename, headers={"User-Agent": "Mozilla/5.0"})
-        return _symbols(io.StringIO(urllib.request.urlopen(req, timeout=15).read().decode()))
-    except Exception as e:
-        log(f"{label}: could not download ({type(e).__name__}) - add the CSV to the universe folder")
-        return None
+    for url in urls:
+        try:
+            log(f"{label}: downloading list from NSE")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            return _symbols(io.StringIO(urllib.request.urlopen(req, timeout=15).read().decode()))
+        except Exception as e:
+            log(f"{label}: could not download ({type(e).__name__})")
+    log(f"{label}: add its CSV to the universe folder")
+    return None
 
 
-def load_universe(log):
+def load_universe(log, scope="indices"):
     names, loaded, failed = {}, {}, []
-    for key, label, filename in GROUPS:
-        syms = _read_group(key, label, filename, log)
+    for key, label, filename, urls in GROUPS:
+        if key == "all_nse" and scope != "all":
+            continue
+        syms = _read_group(key, label, filename, urls, log)
         if syms is None:
             failed.append(label)
             continue
@@ -161,10 +173,10 @@ def _download_chunk(tickers):
         return None
 
 
-def run_scan(progress=lambda *a: None, log=lambda m: None, chunk=40):
+def run_scan(progress=lambda *a: None, log=lambda m: None, scope="indices", chunk=40):
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
     progress("Loading stock lists")
-    names, info = load_universe(log)
+    names, info = load_universe(log, scope)
     symbols = list(names)
     total = len(symbols)
     log(f"{total} stocks to check")

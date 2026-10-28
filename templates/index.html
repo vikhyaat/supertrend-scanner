@@ -50,10 +50,16 @@ footer{margin-top:26px;font-size:12px;color:var(--mut)}
 <div class="card hero">
   <div>
     {% if scanning %}<div class="t">Scanning the market…</div><div class="s"><span id="stage">{{ stage }}</span> <span id="pct">{% if total %}· {{ done }} of {{ total }} stocks{% endif %}</span></div>
-    {% elif updated %}<div class="t">Last scan: {{ updated }}</div><div class="s">Candles up to {{ data_date }} · {{ scanned }} stocks checked</div>
-    {% else %}<div class="t">No scan yet</div><div class="s">Press the button to scan the market. It takes a few minutes.</div>{% endif %}
+    {% elif updated %}<div class="t">Last scan: {{ updated }}</div><div class="s">Candles up to {{ data_date }} · {{ scanned }} stocks checked ({{ scope_label }})</div>
+    {% else %}<div class="t">No scan yet</div><div class="s">Choose what to scan and press the button. Indices take a few minutes; everything on NSE can take 10-20 minutes, so keep this page open.</div>{% endif %}
   </div>
-  <form method="post" action="/scan"><button class="btn" {% if not can_scan %}disabled{% endif %}>{% if scanning %}Scanning…{% else %}▶ Start scan{% endif %}</button></form>
+  <form method="post" action="/scan" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <select name="scope" style="width:auto" {% if scanning %}disabled{% endif %}>
+      <option value="indices" {{ 'selected' if scope != 'all' }}>Nifty 500 + Smallcap + Microcap (~1,000 stocks)</option>
+      <option value="all" {{ 'selected' if scope == 'all' }}>Everything on NSE (~2,000+ stocks, slower)</option>
+    </select>
+    <button class="btn" {% if not can_scan %}disabled{% endif %}>{% if scanning %}Scanning…{% else %}▶ Start scan{% endif %}</button>
+  </form>
 </div>
 {% if scanning %}<div class="bar"><i id="bar" style="width:{{ (100 * done / total) if total else 5 }}%"></i></div>{% endif %}
 {% if not scanning and updated and not can_scan %}<div class="s" style="color:var(--mut);font-size:13px;margin-top:8px">You can scan again {{ cooldown }} minutes after the last scan.</div>{% endif %}
