@@ -2,6 +2,10 @@
 
 A small web app that scans NSE stocks and lists the ones where the **Supertrend has just turned bullish and several filters agree**. It is built to cut down the false signals Supertrend gives in sideways markets.
 
+**Live site:** https://supertrend-scanner-6k7x.onrender.com
+
+The site runs on Render's free plan, so the first visit after a quiet period can take up to a minute to wake up.
+
 > **For education and paper trading only.** This is not investment advice and not a recommendation to buy or sell anything. Prices come from Yahoo Finance and can be delayed or wrong.
 
 ## How it works
