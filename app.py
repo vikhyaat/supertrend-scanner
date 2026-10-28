@@ -2,30 +2,44 @@ import json
 import math
 import os
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from flask import Flask, redirect, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request
 
 import scanner
 
 IST = ZoneInfo("Asia/Kolkata")
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "scan_cache.json")
-REFRESH_HOURS = float(os.environ.get("REFRESH_HOURS", "6"))   # auto-rescan when results are older than this
-COOLDOWN_MIN = float(os.environ.get("COOLDOWN_MIN", "30"))    # minimum gap between scans
+COOLDOWN_MIN = float(os.environ.get("COOLDOWN_MIN", "5"))   # gap required after a successful scan
+STUCK_MIN = 25                                              # a scan older than this is treated as dead
 
 app = Flask(__name__)
 lock = threading.Lock()
-state = {"status": "idle", "progress": "", "error": None, "rows": [], "updated": None, "data_date": None,
-         "provisional": False, "info": {}, "last_attempt": None}
+state = {"status": "idle", "stage": "", "done": 0, "total": 0, "error": None, "rows": [], "updated": None,
+         "data_date": None, "provisional": False, "info": {}, "log": [], "started": None, "scan_id": 0}
 
 
 def now():
     return datetime.now(IST)
 
 
+def minutes_since(iso):
+    return (now() - datetime.fromisoformat(iso)).total_seconds() / 60
+
+
 def market_open(t):
     return t.weekday() < 5 and (9, 15) <= (t.hour, t.minute) < (15, 30)
+
+
+def is_scanning():
+    return state["status"] == "scanning" and minutes_since(state["started"]) < STUCK_MIN
+
+
+def can_scan():
+    if is_scanning():
+        return False
+    return bool(state["error"]) or not state["updated"] or minutes_since(state["updated"]) >= COOLDOWN_MIN
 
 
 def load_cache():
@@ -38,52 +52,55 @@ def load_cache():
 
 def save_cache():
     os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-    keys = ["rows", "updated", "data_date", "provisional", "info"]
     with open(CACHE, "w") as f:
-        json.dump({k: state[k] for k in keys}, f)
-
-
-def minutes_since(iso):
-    return (now() - datetime.fromisoformat(iso)).total_seconds() / 60
-
-
-def needs_refresh():
-    if state["last_attempt"] and minutes_since(state["last_attempt"]) < 10:
-        return False
-    if not state["updated"]:
-        return True
-    if minutes_since(state["updated"]) > REFRESH_HOURS * 60:
-        return True
-    return bool(state["provisional"] and not market_open(now()))   # re-scan once the day's candle is final
+        json.dump({k: state[k] for k in ("rows", "updated", "data_date", "provisional", "info")}, f)
 
 
 def start_scan():
     with lock:
-        if state["status"] == "scanning":
+        if is_scanning():
             return False
-        state.update(status="scanning", progress="starting", error=None, last_attempt=now().isoformat())
-    threading.Thread(target=_run, daemon=True).start()
+        state["scan_id"] += 1
+        state.update(status="scanning", stage="Starting", done=0, total=0, error=None, log=[],
+                     started=now().isoformat())
+        sid = state["scan_id"]
+    threading.Thread(target=_run, args=(sid,), daemon=True).start()
     return True
 
 
-def _run():
+def _run(sid):
+    def live():
+        return state["scan_id"] == sid
+
+    def progress(stage, done=0, total=0):
+        if live():
+            state.update(stage=stage, done=done, total=total)
+
+    def log(msg):
+        if live():
+            state["log"] = (state["log"] + [f"{now():%H:%M:%S}  {msg}"])[-40:]
+
     try:
-        rows, info = scanner.run_scan(lambda d, t: state.update(progress=f"{d} of {t} stocks checked"))
-        t = now()
-        with lock:
-            state.update(rows=rows, info=info, updated=t.isoformat(), data_date=info["data_date"],
-                         provisional=market_open(t))
-        save_cache()
+        rows, info = scanner.run_scan(progress, log)
+        if live():
+            t = now()
+            with lock:
+                state.update(rows=rows, info=info, updated=t.isoformat(), data_date=info["data_date"],
+                             provisional=market_open(t))
+            save_cache()
+            log(f"Finished: {len(rows)} setups found")
     except Exception as e:
-        state["error"] = str(e)
+        log(f"Failed: {e}")
+        if live():
+            state["error"] = str(e)
     finally:
-        state.update(status="idle", progress="")
+        if live():
+            state.update(status="idle", stage="")
 
 
 def num(name, default, lo=0.0, hi=None):
-    raw = request.args.get(name, "").strip()
     try:
-        v = float(raw)
+        v = float(request.args.get(name, "").strip())
     except ValueError:
         return default
     if not math.isfinite(v):
@@ -93,8 +110,6 @@ def num(name, default, lo=0.0, hi=None):
 
 @app.route("/")
 def index():
-    if needs_refresh():
-        start_scan()
     f = {"group": request.args.get("group", "All"), "show": request.args.get("show", "both"),
          "min_price": num("min_price", 5.0), "max_price": num("max_price", None),
          "min_turnover": num("min_turnover", 1.0), "max_risk": num("max_risk", 12.0, 0.1, 100),
@@ -117,24 +132,27 @@ def index():
         rows.append({**r, "qty": qty if r["status"] == "BUY" else qty // 2})
     rows.sort(key=lambda r: (r["status"] != "BUY", -r["filters_ok"], -r["adx"]))
     info = state["info"]
-    last = state["last_attempt"]
+    updated = state["updated"]
     return render_template(
         "index.html", rows=rows, f=f, groups=["All"] + list(info.get("loaded", {})), failed=info.get("failed", []),
-        scanning=state["status"] == "scanning", progress=state["progress"], error=state["error"],
-        provisional=state["provisional"], scanned=info.get("scanned", 0), total=len(state["rows"]),
+        scanning=is_scanning(), stage=state["stage"], done=state["done"], total=state["total"],
+        error=state["error"], log=state["log"], provisional=state["provisional"], scanned=info.get("scanned", 0),
         buys=sum(r["status"] == "BUY" for r in rows), nears=sum(r["status"] == "NEAR" for r in rows),
-        updated=datetime.fromisoformat(state["updated"]).astimezone(IST).strftime("%d %b %Y, %I:%M %p IST") if state["updated"] else None,
+        updated=datetime.fromisoformat(updated).astimezone(IST).strftime("%d %b %Y, %I:%M %p IST") if updated else None,
         data_date=date.fromisoformat(state["data_date"]).strftime("%d %b %Y") if state["data_date"] else None,
-        can_refresh=state["status"] != "scanning" and (not last or minutes_since(last) >= COOLDOWN_MIN),
-        cooldown=int(COOLDOWN_MIN))
+        can_scan=can_scan(), cooldown=int(COOLDOWN_MIN))
 
 
-@app.route("/refresh", methods=["POST"])
-def refresh():
-    last = state["last_attempt"]
-    if not last or minutes_since(last) >= COOLDOWN_MIN:
+@app.route("/scan", methods=["POST"])
+def scan():
+    if can_scan():
         start_scan()
     return redirect("/")
+
+
+@app.route("/status")
+def status():
+    return jsonify(scanning=is_scanning(), stage=state["stage"], done=state["done"], total=state["total"])
 
 
 @app.route("/healthz")
@@ -142,6 +160,4 @@ def healthz():
     return "ok"
 
 
-load_cache()
-if needs_refresh():
-    start_scan()
+load_cache()   # shows the last saved results on start; scans only start when you press the button

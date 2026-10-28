@@ -3,47 +3,73 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-{% if scanning %}<meta http-equiv="refresh" content="20">{% endif %}
 <title>Supertrend Scanner</title>
 <style>
-:root{--bg:#fafaf8;--fg:#1f2328;--mut:#6b7280;--line:#e2e2dc;--card:#fff;--buy:#1a6b3c;--near:#8a5a00}
-@media (prefers-color-scheme:dark){:root{--bg:#16181b;--fg:#e6e6e3;--mut:#9aa0a6;--line:#2f3338;--card:#1d2024;--buy:#5fbf86;--near:#d9a441}}
+:root{--bg:#f4f6f8;--fg:#1b2430;--mut:#667085;--line:#e3e8ee;--card:#fff;--accent:#0f766e;--accent2:#115e59;--buy:#0f7a45;--buyb:#e3f6ec;--near:#9a6200;--nearb:#fdf1d8;--head:#0f1f2e;--shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.05)}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1419;--fg:#e5e9ee;--mut:#97a1ad;--line:#27303a;--card:#171e26;--accent:#2dd4bf;--accent2:#5eead4;--buy:#5fd08f;--buyb:#12301f;--near:#e8b45a;--nearb:#3a2c10;--head:#0a1118;--shadow:none}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
-h1{font-size:22px;margin:0 0 4px;font-weight:600}
-.sub,.meta{color:var(--mut);font-size:14px;margin:0}
-.meta{margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.note{border:1px solid var(--line);background:var(--card);padding:10px 14px;border-radius:6px;margin:12px 0;font-size:14px}
-form.filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:16px 0}
-label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:3px}
-input,select,button{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--card);color:var(--fg)}
-input[type=number]{width:100px}
-button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
-.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:linear-gradient(135deg,var(--head),#134e4a);color:#fff;padding:30px 16px 64px}
+.in{max-width:1120px;margin:0 auto}
+header h1{margin:0;font-size:26px;font-weight:650;letter-spacing:-.01em}
+header p{margin:6px 0 0;color:#b8c7d1;font-size:14px}
+main{max-width:1120px;margin:-40px auto 0;padding:0 16px 48px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:18px}
+.hero{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.hero .t{font-weight:600}.hero .s{color:var(--mut);font-size:14px}
+.btn{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:11px 22px;font:inherit;font-weight:600;cursor:pointer;transition:.15s}
+@media (prefers-color-scheme:dark){.btn{color:#04201c}}
+.btn:hover{filter:brightness(1.08)}.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:12px}
+.bar i{display:block;height:100%;width:5%;background:var(--accent);border-radius:99px;transition:width .6s}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:14px 0}
+.stat{padding:14px 16px}.stat b{display:block;font-size:24px;line-height:1.2}.stat span{color:var(--mut);font-size:13px}
+.note{border-left:3px solid var(--near);background:var(--card);border-radius:8px;padding:10px 14px;margin:12px 0;font-size:14px;border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.note.err{border-left-color:#c0392b}
+form.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;align-items:end}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:4px}
+input,select{font:inherit;padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);width:100%}
+.apply{background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:8px;font:inherit;font-weight:600;cursor:pointer}
+.wrap{overflow:auto;max-height:70vh;margin-top:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);box-shadow:var(--shadow)}
 table{border-collapse:collapse;width:100%;font-size:14px;white-space:nowrap}
-th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line)}
-th{font-size:12px;color:var(--mut);font-weight:600}
+th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line)}
+th{position:sticky;top:0;background:var(--card);font-size:12px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
 th:first-child,td:first-child,.l{text-align:left}
-tr:last-child td{border-bottom:0}
-.buy{color:var(--buy);font-weight:600}.near{color:var(--near);font-weight:600}
-details{margin-top:24px;font-size:14px}summary{cursor:pointer}
-footer{margin-top:24px;font-size:12px;color:var(--mut)}
+tbody tr:hover{background:rgba(15,118,110,.06)}tr:last-child td{border-bottom:0}
+td a{color:var(--fg);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--mut)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
+.pill.BUY{background:var(--buyb);color:var(--buy)}.pill.NEAR{background:var(--nearb);color:var(--near)}
+details{margin-top:18px;font-size:14px;color:var(--mut)}summary{cursor:pointer;color:var(--fg)}
+pre{white-space:pre-wrap;font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px}
+footer{margin-top:26px;font-size:12px;color:var(--mut)}
 </style>
 </head>
-<body><main>
-<h1>Supertrend Scanner</h1>
-<p class="sub">NSE stocks where the Supertrend turned bullish and the filters agree. For study and paper trading only.</p>
-<div class="meta">
-  <span>{% if updated %}Candles up to {{ data_date }} · scanned {{ updated }} · {{ scanned }} stocks{% else %}No scan has finished yet.{% endif %}</span>
-  <form method="post" action="/refresh"><button {% if not can_refresh %}disabled title="Scans are limited to one every {{ cooldown }} minutes"{% endif %}>Scan again</button></form>
+<body>
+<header><div class="in"><h1>Supertrend Scanner</h1><p>NSE stocks where the Supertrend turned bullish and the filters agree. For study and paper trading only.</p></div></header>
+<main>
+<div class="card hero">
+  <div>
+    {% if scanning %}<div class="t">Scanning the market…</div><div class="s"><span id="stage">{{ stage }}</span> <span id="pct">{% if total %}· {{ done }} of {{ total }} stocks{% endif %}</span></div>
+    {% elif updated %}<div class="t">Last scan: {{ updated }}</div><div class="s">Candles up to {{ data_date }} · {{ scanned }} stocks checked</div>
+    {% else %}<div class="t">No scan yet</div><div class="s">Press the button to scan the market. It takes a few minutes.</div>{% endif %}
+  </div>
+  <form method="post" action="/scan"><button class="btn" {% if not can_scan %}disabled{% endif %}>{% if scanning %}Scanning…{% else %}▶ Start scan{% endif %}</button></form>
 </div>
-{% if scanning %}<div class="note">Scanning the market ({{ progress }}). This page refreshes by itself; a full scan takes a few minutes.{% if total %} Showing the previous results meanwhile.{% endif %}</div>{% endif %}
-{% if provisional and not scanning %}<div class="note">This scan ran while the market was open, so today's candle was still forming and signals can change. Reload after 3:30 PM IST for a fresh scan.</div>{% endif %}
-{% if error %}<div class="note">The last scan failed: {{ error }}</div>{% endif %}
-{% if failed %}<div class="note">Could not load stock list: {{ failed|join(', ') }}.</div>{% endif %}
+{% if scanning %}<div class="bar"><i id="bar" style="width:{{ (100 * done / total) if total else 5 }}%"></i></div>{% endif %}
+{% if not scanning and updated and not can_scan %}<div class="s" style="color:var(--mut);font-size:13px;margin-top:8px">You can scan again {{ cooldown }} minutes after the last scan.</div>{% endif %}
 
-<form class="filters" method="get">
+{% if error %}<div class="note err"><b>The last scan failed:</b> {{ error }}</div>{% endif %}
+{% if provisional and not scanning %}<div class="note">That scan ran while the market was open, so today's candle was still forming and signals can change. Scan again after 3:30 PM IST.</div>{% endif %}
+{% if failed %}<div class="note">Could not load stock list: {{ failed|join(', ') }}. Add the CSV to the <code>universe</code> folder.</div>{% endif %}
+
+{% if updated %}
+<div class="stats">
+  <div class="card stat"><b>{{ buys }}</b><span>Buy signals</span></div>
+  <div class="card stat"><b>{{ nears }}</b><span>Near setups</span></div>
+  <div class="card stat"><b>{{ scanned }}</b><span>Stocks checked</span></div>
+  <div class="card stat"><b>{{ data_date }}</b><span>Latest candle</span></div>
+</div>
+<form class="card filters" method="get">
   <label>Universe<select name="group">{% for g in groups %}<option {{ 'selected' if g == f.group }}>{{ g }}</option>{% endfor %}</select></label>
   <label>Show<select name="show">{% for v, t in [('both','Buy + Near'),('BUY','Buy only'),('NEAR','Near only')] %}<option value="{{ v }}" {{ 'selected' if v == f.show }}>{{ t }}</option>{% endfor %}</select></label>
   <label>Min price (₹)<input type="number" name="min_price" value="{{ f.min_price }}" step="any" min="0"></label>
@@ -53,17 +79,15 @@ footer{margin-top:24px;font-size:12px;color:var(--mut)}
   <label>Buy signal age (days)<input type="number" name="recent" value="{{ f.recent }}" min="0" max="3"></label>
   <label>Capital (₹)<input type="number" name="capital" value="{{ f.capital|int }}" min="1000"></label>
   <label>Risk per trade (%)<input type="number" name="risk" value="{{ f.risk }}" step="any" min="0.1" max="5"></label>
-  <button type="submit">Apply</button>
+  <button class="apply" type="submit">Apply filters</button>
 </form>
-
 {% if rows %}
-<p class="sub" style="margin-bottom:8px">{{ buys }} buy · {{ nears }} near</p>
 <div class="wrap"><table>
 <thead><tr><th>Stock</th><th class="l">Signal</th><th>Price</th><th>Stop</th><th>Stop %</th><th>Target</th><th>Qty</th><th>Flip</th><th>Filters</th><th class="l">Missing</th><th>ADX</th><th>Chop</th><th>RSI</th><th>Vol ×</th><th>₹ cr/day</th></tr></thead>
 <tbody>
 {% for r in rows %}<tr>
 <td><a href="https://www.tradingview.com/chart/?symbol=NSE%3A{{ r.symbol|urlencode }}" target="_blank" rel="noopener">{{ r.symbol }}</a></td>
-<td class="l {{ 'buy' if r.status == 'BUY' else 'near' }}">{{ r.status }}</td>
+<td class="l"><span class="pill {{ r.status }}">{{ r.status }}</span></td>
 <td>{{ '%.2f'|format(r.close) }}</td><td>{{ '%.2f'|format(r.stop) }}</td><td>{{ '%.1f'|format(r.risk_pct) }}</td><td>{{ '%.2f'|format(r.target) }}</td>
 <td>{{ r.qty }}</td>
 <td>{{ 'today' if r.bars_since_flip == 0 else (r.bars_since_flip ~ 'd ago') }}</td>
@@ -71,11 +95,27 @@ footer{margin-top:24px;font-size:12px;color:var(--mut)}
 <td>{{ '%.1f'|format(r.adx) }} {{ '↑' if r.adx_rising else '↓' }}</td><td>{{ '%.1f'|format(r.chop) }}</td><td>{{ '%.1f'|format(r.rsi) }}</td><td>{{ '%.2f'|format(r.vol_x) }}</td><td>{{ '%.1f'|format(r.turnover_cr) }}</td>
 </tr>{% endfor %}
 </tbody></table></div>
-{% elif updated %}<div class="note">No stocks match these filters right now. That is normal; the filters are strict.</div>{% endif %}
+{% else %}<div class="note">No stocks match these filters right now. That is normal; the filters are strict.</div>{% endif %}
+{% endif %}
 
 <details><summary>How to read this</summary>
-<p><b>BUY</b>: the Supertrend turned bullish within the last few days and all 5 filters pass (ADX ≥ 22 with +DI above −DI, choppiness ≤ 55, price above the 200 EMA, RSI above 50, volume above its 20-day average). <b>NEAR</b>: a recent flip with 4 of 5 filters passing; the "Missing" column shows which one is blocking it, so watch it and do not buy yet.</p>
-<p><b>Stop</b> is the Supertrend line, <b>Target</b> is 2× the risk, and <b>Qty</b> sizes the position so a stop-out costs the chosen risk % of your capital (NEAR shows a half-size starter). Stocks with under a year of history are skipped. Check results, upcoming events and the price band (circuit limit) before any paper trade.</p>
+<p><b>BUY</b>: the Supertrend turned bullish within the last few days and all 5 filters pass (ADX ≥ 22 with +DI above −DI, choppiness ≤ 55, price above the 200 EMA, RSI above 50, volume above its 20-day average). <b>NEAR</b>: a recent flip with 4 of 5 filters passing; "Missing" shows which one blocks it, so watch it and do not buy yet.</p>
+<p><b>Stop</b> is the Supertrend line, <b>Target</b> is 2× the risk, and <b>Qty</b> sizes the position so a stop-out costs your chosen risk % of capital (NEAR shows a half-size starter). Stocks with under a year of history are skipped. Check results, upcoming events and the price band (circuit limit) before any paper trade.</p>
 </details>
+{% if log %}<details><summary>Scan log</summary><pre>{{ log|join('\n') }}</pre></details>{% endif %}
 <footer>Prices from Yahoo Finance via yfinance, which can be delayed or wrong. Not investment advice; I am not a SEBI-registered advisor.</footer>
-</main></body></html>
+</main>
+{% if scanning %}<script>
+async function poll(){
+  try{
+    const s=await (await fetch('/status')).json();
+    if(!s.scanning){location.reload();return}
+    document.getElementById('stage').textContent=s.stage;
+    document.getElementById('pct').textContent=s.total?('· '+s.done+' of '+s.total+' stocks'):'';
+    document.getElementById('bar').style.width=(s.total?Math.max(5,Math.round(100*s.done/s.total)):5)+'%';
+  }catch(e){}
+  setTimeout(poll,3000);
+}
+poll();
+</script>{% endif %}
+</body></html>

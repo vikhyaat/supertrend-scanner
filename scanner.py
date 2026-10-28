@@ -12,10 +12,10 @@ import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE = "https://niftyindices.com/IndexConstituent/"
-GROUPS = [  # (file key, label, download url)
-    ("nifty500", "Nifty 500", BASE + "ind_nifty500list.csv"),
-    ("smallcap250", "Nifty Smallcap 250", BASE + "ind_niftysmallcap250list.csv"),
-    ("microcap250", "Nifty Microcap 250", BASE + "ind_niftymicrocap250_list.csv"),
+GROUPS = [  # (file key, label, NSE file name)
+    ("nifty500", "Nifty 500", "ind_nifty500list.csv"),
+    ("smallcap250", "Nifty Smallcap 250", "ind_niftysmallcap250list.csv"),
+    ("microcap250", "Nifty Microcap 250", "ind_niftymicrocap250_list.csv"),
 ]
 NAMES = ["ADX", "CHOP", "EMA200", "RSI", "VOL"]
 RR = 2.0          # target = 2 x risk
@@ -120,20 +120,26 @@ def _symbols(src):
     return df[col].astype(str).str.strip().tolist()
 
 
-def load_universe():
+def _read_group(key, label, filename, log):
+    """Use a CSV from the 'universe' folder if present (most reliable on a server); else try NSE."""
+    for name in (key + ".csv", filename):
+        path = os.path.join(BASE_DIR, "universe", name)
+        if os.path.exists(path):
+            log(f"{label}: using universe/{name}")
+            return _symbols(path)
+    try:
+        log(f"{label}: downloading list from NSE")
+        req = urllib.request.Request(BASE + filename, headers={"User-Agent": "Mozilla/5.0"})
+        return _symbols(io.StringIO(urllib.request.urlopen(req, timeout=15).read().decode()))
+    except Exception as e:
+        log(f"{label}: could not download ({type(e).__name__}) - add the CSV to the universe folder")
+        return None
+
+
+def load_universe(log):
     names, loaded, failed = {}, {}, []
-    for key, label, url in GROUPS:
-        syms = None
-        for _ in range(2):
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                syms = _symbols(io.StringIO(urllib.request.urlopen(req, timeout=30).read().decode()))
-                break
-            except Exception:
-                time.sleep(2)
-        local = os.path.join(BASE_DIR, "universe", key + ".csv")   # optional manual fallback
-        if syms is None and os.path.exists(local):
-            syms = _symbols(local)
+    for key, label, filename in GROUPS:
+        syms = _read_group(key, label, filename, log)
         if syms is None:
             failed.append(label)
             continue
@@ -142,29 +148,33 @@ def load_universe():
             if "DUMMY" not in s.upper():
                 names.setdefault(s, label)
     if not names:
-        raise RuntimeError("Could not load any stock list from NSE. Put CSV files in the 'universe' folder.")
+        raise RuntimeError("No stock list available. Put the NSE index CSV files in the 'universe' folder.")
     return names, {"loaded": loaded, "failed": failed}
 
 
 def _download_chunk(tickers):
     import yfinance as yf
-    for _ in range(2):
-        try:
-            return yf.download(tickers, period="2y", interval="1d", group_by="ticker",
-                               auto_adjust=True, threads=True, progress=False)
-        except Exception:
-            time.sleep(3)
-    return None
+    try:
+        return yf.download(tickers, period="2y", interval="1d", group_by="ticker", auto_adjust=True,
+                           threads=4, progress=False, timeout=20)
+    except Exception:
+        return None
 
 
-def run_scan(progress=None, chunk=50):
+def run_scan(progress=lambda *a: None, log=lambda m: None, chunk=40):
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
-    names, info = load_universe()
+    progress("Loading stock lists")
+    names, info = load_universe(log)
     symbols = list(names)
+    total = len(symbols)
+    log(f"{total} stocks to check")
     rows, dates, analysed = [], [], 0
-    for k in range(0, len(symbols), chunk):
+    for k in range(0, total, chunk):
         part = symbols[k:k + chunk]
+        progress("Downloading prices and checking signals", k, total)
         data = _download_chunk([s + ".NS" for s in part])
+        if data is None or getattr(data, "empty", True):
+            log(f"No price data returned for stocks {k + 1}-{k + len(part)}")
         for s in part:
             try:
                 res = analyse(data[s + ".NS"].dropna(how="all"))
@@ -184,10 +194,12 @@ def run_scan(progress=None, chunk=50):
             if any(isinstance(v, float) and math.isnan(v) for v in row.values()) or row["risk_ps"] <= 0:
                 continue
             rows.append(row)
-        if progress:
-            progress(min(k + chunk, len(symbols)), len(symbols))
+        done = min(k + chunk, total)
+        progress("Downloading prices and checking signals", done, total)
+        log(f"Checked {done} of {total}; {analysed} had usable data")
         time.sleep(1)
-    if analysed < 0.3 * len(symbols):
-        raise RuntimeError("Price data provider returned too little data. Try again later.")
+    if analysed < 0.3 * total:
+        raise RuntimeError(f"Yahoo Finance gave usable prices for only {analysed} of {total} stocks "
+                           "(it may be blocking this server). Try again later.")
     info.update(scanned=analysed, data_date=Counter(dates).most_common(1)[0][0])
     return rows, info
